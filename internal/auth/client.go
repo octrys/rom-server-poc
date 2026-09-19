@@ -5,6 +5,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,11 +22,36 @@ var ErrSessionInvalid = errors.New("auth: session not recognised by region")
 
 // Session is the record region returns for a valid sessionKey.
 type Session struct {
-	SessionKey int32  `json:"sessionKey"`
-	AccountID  int64  `json:"accountId"`
-	UserCode   string `json:"userCode"`
-	WorldID    int    `json:"worldId"`
-	ExpiresAt  int64  `json:"expiresAt"`
+	SessionKey int32     `json:"sessionKey"`
+	AccountID  int64     `json:"accountId"`
+	UserCode   string    `json:"userCode"`
+	WorldID    int       `json:"worldId"`
+	ExpiresAt  flexInt64 `json:"expiresAt"`
+}
+
+// flexInt64 unmarshals a JSON integer that region may send either as a number or
+// as a quoted string. A non-numeric value decodes to 0; the game server does not
+// use this field (region enforces expiry), so tolerance here just avoids a hard
+// failure on the representation.
+type flexInt64 int64
+
+func (f *flexInt64) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(data, []byte("null")) {
+		*f = 0
+		return nil
+	}
+	s := strings.Trim(string(data), `"`)
+	if s == "" {
+		*f = 0
+		return nil
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		*f = 0
+		return nil
+	}
+	*f = flexInt64(n)
+	return nil
 }
 
 // Client calls the region service's /internal/sessions endpoints.

@@ -72,6 +72,7 @@ func (h *Handler) Serve(ctx context.Context, conn *transport.Conn) {
 			log.Warn("unknown opcode; ignoring")
 			continue
 		}
+		log.Debug("recv", "message", msg.Name)
 		if err := h.dispatch(ctx, s, msg, values); err != nil {
 			log.Warn("handler failed", "message", msg.Name, "error", err)
 			return
@@ -88,6 +89,23 @@ func (h *Handler) dispatch(ctx context.Context, s *session, msg *protocol.Messag
 		return h.handleVersionCheck(s, values)
 	case "C2S_SessionAuthLogin":
 		return h.handleLogin(ctx, s, values)
+	}
+
+	// Everything past login requires an authenticated session.
+	if !s.authed {
+		return fmt.Errorf("%s received before login", msg.Name)
+	}
+	switch msg.Name {
+	case "C2S_SetOptions":
+		return h.handleSetOptions(ctx, s, values)
+	case "C2S_WaitingUserCount":
+		return h.handleWaitingUserCount(s)
+	case "C2S_PlayerList":
+		return h.handlePlayerList(ctx, s)
+	case "C2S_CreatePlayer":
+		return h.handleCreatePlayer(ctx, s, values)
+	case "C2S_Logout":
+		return h.handleLogout(s)
 	default:
 		h.Logger.Info("unhandled message", "message", msg.Name)
 		return nil
@@ -129,7 +147,7 @@ func (h *Handler) handleLogin(ctx context.Context, s *session, values protocol.V
 
 	session, err := h.Auth.Validate(ctx, sessionKey, accountCode)
 	if err != nil {
-		h.Logger.Warn("login rejected", "accountCode", accountCode, "error", err)
+		h.Logger.Warn("login rejected", "accountCode", accountCode, "sessionKey", sessionKey, "error", err)
 		return h.sendLoginResult(s, accountCode, sessionKey, resultAuthFailed)
 	}
 	if session.WorldID != h.WorldID {
@@ -146,7 +164,7 @@ func (h *Handler) handleLogin(ctx context.Context, s *session, values protocol.V
 	s.accountID = session.AccountID
 	s.accountCode = session.UserCode
 	s.authed = true
-	h.Logger.Info("login accepted", "accountId", s.accountID, "accountCode", s.accountCode)
+	h.Logger.Info("login accepted", "accountId", s.accountID, "accountCode", s.accountCode, "sessionKey", sessionKey)
 	return h.sendLoginResult(s, accountCode, sessionKey, resultOK)
 }
 
@@ -173,6 +191,17 @@ func asInt64(v any) (int64, bool) {
 		return n, true
 	case uint64:
 		return int64(n), true
+	default:
+		return 0, false
+	}
+}
+
+func asUint64(v any) (uint64, bool) {
+	switch n := v.(type) {
+	case uint64:
+		return n, true
+	case int64:
+		return uint64(n), true
 	default:
 		return 0, false
 	}
