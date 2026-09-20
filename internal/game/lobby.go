@@ -21,11 +21,14 @@ const (
 	maxNameLen = 16
 )
 
-// S2C_CreatePlayer.m_result codes. 0 is success; the client's specific failure
-// codes are not yet reversed, so failures use a single generic non-zero value.
+// S2C_CreatePlayer.m_result codes, taken from the client's own error enum. 0 is
+// success (ERR_SUCCESS); the non-zero values were confirmed from captures
+// (a duplicate-name attempt returns 50102) and the client metadata enum table.
 const (
-	createResultOK    = 0
-	createResultError = 1
+	createResultOK          = 0     // ERR_SUCCESS
+	createResultInvalidName = 26    // ERR_INVALID_NAME_LENGTH
+	createResultDupName     = 50102 // ERR_DB_DUP_CHAR_NAME
+	createResultNoFreeSlot  = 55001 // ERR_DB_NOT_ENOUGH_CHAR_SLOT
 )
 
 // startMaps maps a class to its newbie start map. Only class 2 -> 501 is
@@ -95,7 +98,7 @@ func (h *Handler) handleCreatePlayer(ctx context.Context, s *session, values pro
 
 	if length := utf8.RuneCountInString(name); length < minNameLen || length > maxNameLen {
 		h.Logger.Warn("create rejected: bad name", "name", name)
-		return h.sendCreateResult(s, createResultError, nil)
+		return h.sendCreateResult(s, createResultInvalidName, nil)
 	}
 
 	characters, err := h.Store.ListCharacters(ctx, s.accountID)
@@ -105,7 +108,7 @@ func (h *Handler) handleCreatePlayer(ctx context.Context, s *session, values pro
 	slot, ok := freeSlot(characters)
 	if !ok {
 		h.Logger.Warn("create rejected: slots full", "accountId", s.accountID)
-		return h.sendCreateResult(s, createResultError, nil)
+		return h.sendCreateResult(s, createResultNoFreeSlot, nil)
 	}
 
 	created, err := h.Store.CreateCharacter(ctx, persist.Character{
@@ -118,11 +121,16 @@ func (h *Handler) handleCreatePlayer(ctx context.Context, s *session, values pro
 		MapID:     startMapForClass(int32(classType)),
 	})
 	if err != nil {
-		if isCreateConflict(err) {
-			h.Logger.Info("create rejected: conflict", "name", name, "error", err)
-			return h.sendCreateResult(s, createResultError, nil)
+		switch {
+		case errors.Is(err, persist.ErrNameTaken):
+			h.Logger.Info("create rejected: duplicate name", "name", name)
+			return h.sendCreateResult(s, createResultDupName, nil)
+		case errors.Is(err, persist.ErrSlotTaken):
+			h.Logger.Info("create rejected: slot taken", "slot", slot)
+			return h.sendCreateResult(s, createResultNoFreeSlot, nil)
+		default:
+			return fmt.Errorf("create player: %w", err)
 		}
-		return fmt.Errorf("create player: %w", err)
 	}
 
 	h.Logger.Info("character created", "accountId", s.accountID, "name", name, "slot", slot)
@@ -163,10 +171,6 @@ func freeSlot(characters []persist.Character) (int32, bool) {
 		}
 	}
 	return 0, false
-}
-
-func isCreateConflict(err error) bool {
-	return errors.Is(err, persist.ErrNameTaken) || errors.Is(err, persist.ErrSlotTaken)
 }
 
 // toLobbyPlayerInfo maps a persisted character to the wire LobbyPlayerInfo struct.
