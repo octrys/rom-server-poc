@@ -18,7 +18,7 @@ import (
 const characterColumns = `id, account_id, slot_index, name, class_type, sub_class_type,
 	head_type, level, exp, real_power, map_id, equip_costume_index, equip_costume_step_up,
 	weapon_item_index, weapon_enchant, guild_name, latest_login_time, latest_logout_time,
-	deleted_time, x, y, created_at`
+	deleted_time, x, y, z, dir, created_at`
 
 // Store implements persist.Store over a pgx connection pool.
 type Store struct {
@@ -111,12 +111,12 @@ func (s *Store) CreateCharacter(ctx context.Context, c persist.Character) (persi
 		INSERT INTO characters
 			(account_id, slot_index, name, class_type, sub_class_type, head_type, level, exp,
 			 real_power, map_id, equip_costume_index, equip_costume_step_up, weapon_item_index,
-			 weapon_enchant, guild_name, latest_login_time, latest_logout_time, deleted_time, x, y)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+			 weapon_enchant, guild_name, latest_login_time, latest_logout_time, deleted_time, x, y, z, dir)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 		RETURNING id, created_at`,
 		c.AccountID, c.SlotIndex, c.Name, c.ClassType, c.SubClassType, c.HeadType, c.Level, c.Exp,
 		c.RealPower, c.MapID, c.EquipCostumeIndex, c.EquipCostumeStepUp, c.WeaponItemIndex,
-		c.WeaponEnchant, c.GuildName, c.LatestLoginTime, c.LatestLogoutTime, c.DeletedTime, c.X, c.Y)
+		c.WeaponEnchant, c.GuildName, c.LatestLoginTime, c.LatestLogoutTime, c.DeletedTime, c.X, c.Y, c.Z, c.Dir)
 	if err := row.Scan(&c.ID, &c.CreatedAt); err != nil {
 		if taken := uniqueViolation(err); taken != nil {
 			return persist.Character{}, taken
@@ -143,9 +143,10 @@ func uniqueViolation(err error) error {
 	}
 }
 
-func (s *Store) SavePosition(ctx context.Context, id int64, mapID int32, x, y float32) error {
+func (s *Store) SavePosition(ctx context.Context, id int64, mapID int32, x, y, z, dir float32) error {
 	tag, err := s.pool.Exec(ctx, `
-		UPDATE characters SET map_id = $2, x = $3, y = $4 WHERE id = $1`, id, mapID, x, y)
+		UPDATE characters SET map_id = $2, x = $3, y = $4, z = $5, dir = $6 WHERE id = $1`,
+		id, mapID, x, y, z, dir)
 	if err != nil {
 		return fmt.Errorf("postgres: save position: %w", err)
 	}
@@ -165,6 +166,6 @@ func scanCharacter(row scanner) (persist.Character, error) {
 	err := row.Scan(&c.ID, &c.AccountID, &c.SlotIndex, &c.Name, &c.ClassType, &c.SubClassType,
 		&c.HeadType, &c.Level, &c.Exp, &c.RealPower, &c.MapID, &c.EquipCostumeIndex,
 		&c.EquipCostumeStepUp, &c.WeaponItemIndex, &c.WeaponEnchant, &c.GuildName,
-		&c.LatestLoginTime, &c.LatestLogoutTime, &c.DeletedTime, &c.X, &c.Y, &c.CreatedAt)
+		&c.LatestLoginTime, &c.LatestLogoutTime, &c.DeletedTime, &c.X, &c.Y, &c.Z, &c.Dir, &c.CreatedAt)
 	return c, err
 }

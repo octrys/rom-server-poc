@@ -54,6 +54,8 @@ type Character struct {
 	DeletedTime        int64
 	X                  float32
 	Y                  float32
+	Z                  float32
+	Dir                float32
 	CreatedAt          time.Time
 }
 
@@ -72,8 +74,8 @@ type Store interface {
 	GetCharacter(ctx context.Context, id int64) (Character, error)
 	// CreateCharacter inserts a new character and returns it with its assigned ID.
 	CreateCharacter(ctx context.Context, c Character) (Character, error)
-	// SavePosition persists a character's map and coordinates (periodic snapshot).
-	SavePosition(ctx context.Context, id int64, mapID int32, x, y float32) error
+	// SavePosition persists a character's map and pose (periodic snapshot).
+	SavePosition(ctx context.Context, id int64, mapID int32, x, y, z, dir float32) error
 	// Close releases any underlying resources.
 	Close()
 }

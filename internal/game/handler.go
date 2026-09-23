@@ -40,6 +40,12 @@ type session struct {
 	accountCode string
 	authed      bool
 	startedAt   time.Time
+
+	// world state, populated once the client selects a character and enters.
+	character *persist.Character
+	playerOID int64
+	warpToken int64
+	inWorld   bool
 }
 
 // Serve runs the connection's lifecycle until it closes or ctx is cancelled. The
@@ -50,8 +56,8 @@ func (h *Handler) Serve(ctx context.Context, conn *transport.Conn) {
 	log.Info("connection established")
 
 	defer func() {
-		if s.authed {
-			h.World.Leave(ctx, s.accountID)
+		if s.inWorld && s.character != nil {
+			h.World.Leave(ctx, s.character.ID)
 		}
 		_ = conn.Close()
 		log.Info("connection closed")
@@ -104,6 +110,16 @@ func (h *Handler) dispatch(ctx context.Context, s *session, msg *protocol.Messag
 		return h.handlePlayerList(ctx, s)
 	case "C2S_CreatePlayer":
 		return h.handleCreatePlayer(ctx, s, values)
+	case "C2S_EnterWorld":
+		return h.handleEnterWorld(ctx, s, values)
+	case "C2S_MapEnter":
+		return h.handleMapEnter(ctx, s, values)
+	case "C2S_MapEnterPreComplete":
+		return h.handleMapEnterPreComplete(s)
+	case "C2S_MapEnterComplete":
+		return h.handleMapEnterComplete(s)
+	case "C2S_PlayerLoadFirstCall":
+		return h.handlePlayerLoadFirstCall(s)
 	case "C2S_Logout":
 		return h.handleLogout(s)
 	default:

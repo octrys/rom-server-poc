@@ -18,11 +18,13 @@ type Sender interface {
 
 // Player is an entity present in the world, bound to a live connection.
 type Player struct {
+	OID         int64 // world-unique object id sent to clients
 	CharacterID int64
 	AccountID   int64
 	Name        string
 	MapID       int32
-	X, Y        float32
+	X, Y, Z     float32
+	Dir         float32
 	Conn        Sender
 }
 
@@ -95,11 +97,11 @@ func (w *World) Leave(ctx context.Context, characterID int64) {
 	})
 }
 
-// Move updates a player's target position (echo movement, for now).
-func (w *World) Move(ctx context.Context, characterID int64, x, y float32) {
+// Move updates a player's pose (echo movement, for now).
+func (w *World) Move(ctx context.Context, characterID int64, x, y, z, dir float32) {
 	w.do(ctx, func(world *World) {
 		if p, ok := world.players[characterID]; ok {
-			p.X, p.Y = x, y
+			p.X, p.Y, p.Z, p.Dir = x, y, z, dir
 		}
 	})
 }
